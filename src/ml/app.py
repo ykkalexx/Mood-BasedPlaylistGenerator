@@ -37,7 +37,28 @@ playlist_generator = PlaylistGenerator()
 
 @app.route('/analyze', methods=['POST'])
 def analyze_emotion():
-    pass
+    try:
+        data = request.json
+        if not data or 'text' not in data:
+            return jsonify({"error": "Invalid request"}), 400
+        
+        text = data["text"]
+        emotion = classifier(text)[0]
+        emotions_sorter = sorted(emotion, key = lambda x: x['score'], reverse=True)
+
+        primary_emotion = emotions_sorter[0]
+        secondary_emotion = emotions_sorter[1] 
+
+        result = {
+            "primary": primary_emotion['label'],
+            'secondary': secondary_emotion['label'],
+            'intensity': float(primary_emotion['score'])
+        }
+
+        return jsonify(result)
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500  
 
 @app.route('/generate-playlist', methods=['POST'])
 def generate_playlist():
