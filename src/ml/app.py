@@ -62,7 +62,22 @@ def analyze_emotion():
 
 @app.route('/generate-playlist', methods=['POST'])
 def generate_playlist():
-    pass
+    try:
+        emotion_data = request.json
+        if not emotion_data:
+            return jsonify({"error": "Invalid request"}), 400
+        
+        # generate the features based on the emotion data
+        features = playlist_generator.generate_features(emotion_data)
+
+        # integerate the ml model soon, for now ill just return them to nodejs
+        return jsonify({
+            'features': features,
+            'emotion': emotion_data
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(port=5000, debug=True)
