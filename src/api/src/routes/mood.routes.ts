@@ -6,5 +6,6 @@ const moodController = new MoodController();
 
 router.post("/analyze", moodController.analyze);
 router.get("/history", moodController.getHistory);
+router.get("/test-spotify", moodController.testSpotify);
 
 export default router;
