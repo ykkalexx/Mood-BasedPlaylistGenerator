@@ -122,3 +122,5 @@
 {"expiresIn":3600,"level":"info","message":"Got auth response:","timestamp":"2024-11-07T10:38:25.212Z","tokenLength":115}
 {"level":"info","message":"Requesting Spotify access token...","timestamp":"2024-11-07T10:38:31.383Z"}
 {"level":"info","message":"Received Spotify access token","timestamp":"2024-11-07T10:38:31.452Z"}
+{"level":"info","message":"Database connection established","timestamp":"2024-11-07T10:39:17.601Z"}
+{"level":"info","message":"Server is running on port 3000","timestamp":"2024-11-07T10:39:17.605Z"}
