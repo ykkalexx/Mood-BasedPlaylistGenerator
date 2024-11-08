@@ -177,7 +177,39 @@ playlist_generator = PlaylistGenerator()
 @app.route('/analyze', methods=['POST'])
 def analyze_emotion():
     try:
-        pass
+        data = request.get_json()
+        if not data or 'text' not in data:
+            return jsonify({'error': 'Invalid input'}), 400
+        
+        text = data['text']
+        logger.info(f"Analyzing text: {text[:100]}...")
+
+        emotion_analysis = emotion_analyzer.analyze_text(text)
+        music_features = playlist_generator.generate_features(emotion_analysis)
+
+        response = {
+            'emotion_analysis': {
+                'primary': emotion_analysis.primary,
+                'secondary': emotion_analysis.secondary,
+                'emotions': emotion_analysis.emotions,
+                'intensity': emotion_analysis.intensity,
+                'valence': emotion_analysis.valence,
+                'arousal': emotion_analysis.arousal
+        },
+            'music_features': {
+                'valence': music_features.valence,
+                'energy': music_features.energy,
+                'danceability': music_features.danceability,
+                'tempo_preference': music_features.tempo_preference,
+                'instrumentalness': music_features.instrumentalness,
+                'acousticness': music_features.acousticness,
+                'popularity_target': music_features.popularity_target,
+                'recommended_genres': music_features.genres
+            }
+        }
+
+        logger.info(f"Analysis complete: {json.dumps(response, indent=2)}")
+        return jsonify(response)
 
     except Exception as e:
         logger.error(f"Error in analyze_emotion: {str(e)}", exc_info=True)
@@ -185,11 +217,7 @@ def analyze_emotion():
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    return jsonify({
-        'status': 'healthy',
-        'classifier_loaded': classifier is not None,
-        'supported_emotions': list(playlist_generator.emotion_to_features.keys())
-    })
+    pass
 
 if __name__ == '__main__':
     app.run(port=5000, debug=True)
