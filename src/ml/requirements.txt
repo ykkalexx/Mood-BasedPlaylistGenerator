@@ -3,3 +3,6 @@ flask-cors
 numpy
 transformers
 torch
+scipy 
+scikit-learn 
+nltk

@@ -7,8 +7,57 @@ dotenv.config();
 
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || "http://localhost:5000";
 
+interface EmotionAnalysis {
+  primary: string;
+  secondary: string;
+  emotions: Record<string, number>;
+  intensity: number;
+  valence: number;
+  arousal: number;
+}
+
+interface MusicFeatures {
+  valence: number;
+  energy: number;
+  danceability: number;
+  tempo_preference: number;
+  instrumentalness: number;
+  acousticness: number;
+  popularity_target: number;
+  recommended_genres: string[];
+}
+
+interface TrackAudioFeatures {
+  valence: number;
+  energy: number;
+  danceability: number;
+  instrumentalness: number;
+  acousticness: number;
+  [key: string]: number;
+}
+
+interface WeightedFeatures {
+  valence: number;
+  energy: number;
+  danceability: number;
+  instrumentalness: number;
+  acousticness: number;
+}
+
+interface AnalysisResponse {
+  emotion_analysis: EmotionAnalysis;
+  music_features: MusicFeatures;
+}
+
 export class MoodAnalysisService {
   private spotifyApi: SpotifyWebApi;
+  private readonly featureWeights: WeightedFeatures = {
+    valence: 0.3,
+    energy: 0.2,
+    danceability: 0.2,
+    instrumentalness: 0.15,
+    acousticness: 0.15,
+  };
 
   constructor() {
     this.spotifyApi = new SpotifyWebApi({
@@ -30,15 +79,6 @@ export class MoodAnalysisService {
         error: error.message,
         details: error.body,
       });
-      throw error;
-    }
-  }
-
-  private async ensureValidToken(): Promise<void> {
-    try {
-      await this.initSpotifyToken();
-    } catch (error) {
-      logger.error("Token initialization failed:", error);
       throw error;
     }
   }
@@ -97,33 +137,80 @@ export class MoodAnalysisService {
 
   public async generatePlaylist(emotions: any): Promise<any> {
     try {
-      await this.ensureValidToken();
+      await this.initSpotifyToken();
 
-      // Get music features from ML service
-      const response = await axios.post(
-        `${ML_SERVICE_URL}/generate-playlist`,
-        emotions
+      // getting emotion analysis and music features from the python service
+      const response = await axios.post<AnalysisResponse>(
+        `${ML_SERVICE_URL}/analyze`
       );
-      const { features } = response.data;
+      const { emotion_analysis, music_features } = response.data;
+      logger.info("Received analysis:", { emotion_analysis, music_features });
 
-      // Get recommendations
+      // getting  recommendations based on features
       const recommendations = await this.spotifyApi.getRecommendations({
-        target_valence: features.valence,
-        target_energy: features.energy,
-        target_danceability: features.danceability,
-        seed_genres: ["pop", "rock", "indie"],
-        min_popularity: 50,
-        limit: 10,
+        target_valence: music_features.valence,
+        target_energy: music_features.energy,
+        target_danceability: music_features.danceability,
+        target_instrumentalness: music_features.instrumentalness,
+        target_acousticness: music_features.acousticness,
+        min_popularity: music_features.popularity_target - 10,
+        max_popularity: music_features.popularity_target + 10,
+        seed_genres: music_features.recommended_genres.slice(0, 3),
+        limit: 20,
       });
 
+      // getting  audio features for recommended tracks
+      const trackIds = recommendations.body.tracks.map((track) => track.id);
+      const audioFeatures = await this.spotifyApi.getAudioFeaturesForTracks(
+        trackIds
+      );
+
+      // scoring  and sort tracks based on feature match
+      const scoredTracks = recommendations.body.tracks.map((track, index) => {
+        const features = audioFeatures.body.audio_features[
+          index
+        ] as unknown as TrackAudioFeatures;
+        const score = this.calculateTrackScore(features, music_features);
+        return { track, score };
+      });
+
+      scoredTracks.sort((a, b) => b.score - a.score);
+
+      // taking  top 10 tracks
+      const finalTracks = scoredTracks.slice(0, 10).map((item) => item.track);
+
       return {
-        tracks: recommendations.body.tracks,
-        mood: emotions.primary,
-        features,
+        tracks: finalTracks,
+        emotion_analysis,
+        music_features,
+        playlist_stats: {
+          average_valence: this.average(finalTracks, "valence"),
+          average_energy: this.average(finalTracks, "energy"),
+          average_danceability: this.average(finalTracks, "danceability"),
+          genres: music_features.recommended_genres,
+        },
       };
     } catch (error) {
       logger.error("Error generating playlist:", error);
       throw error;
     }
+  }
+
+  private calculateTrackScore(
+    trackFeatures: TrackAudioFeatures,
+    targetFeatures: MusicFeatures
+  ): number {
+    return (
+      Object.keys(this.featureWeights) as Array<keyof WeightedFeatures>
+    ).reduce((score, feature) => {
+      const weight = this.featureWeights[feature];
+      const diff = Math.abs(trackFeatures[feature] - targetFeatures[feature]);
+      return score - diff * weight;
+    }, 1);
+  }
+
+  private average(tracks: any[], feature: string): number {
+    const sum = tracks.reduce((acc, track) => acc + (track[feature] || 0), 0);
+    return sum / tracks.length;
   }
 }

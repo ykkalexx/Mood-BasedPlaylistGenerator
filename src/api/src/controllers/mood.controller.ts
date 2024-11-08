@@ -4,6 +4,39 @@ import { MoodEntry } from "../models/mood.model";
 import { MoodAnalysisService } from "../services/moodAnalysis.service";
 import { logger } from "../utils/logger";
 
+interface PlaylistResponse {
+  tracks: Array<{
+    id: string;
+    external_urls: {
+      spotify: string;
+    };
+  }>;
+  emotion_analysis: {
+    primary: string;
+    secondary: string;
+    emotions: Record<string, number>;
+    intensity: number;
+    valence: number;
+    arousal: number;
+  };
+  music_features: {
+    valence: number;
+    energy: number;
+    danceability: number;
+    tempo_preference: number;
+    instrumentalness: number;
+    acousticness: number;
+    popularity_target: number;
+    recommended_genres: string[];
+  };
+  playlist_stats: {
+    average_valence: number;
+    average_energy: number;
+    average_danceability: number;
+    genres: string[];
+  };
+}
+
 export class MoodController {
   private moodAnalysisService: MoodAnalysisService;
 
@@ -20,35 +53,49 @@ export class MoodController {
         return;
       }
 
+      // Get emotion analysis first
       const emotions = await this.moodAnalysisService.analyzeMood(text);
-      const playlist = await this.moodAnalysisService.generatePlaylist(
+      logger.info("Emotion analysis complete:", emotions);
+
+      // Generate playlist based on emotions
+      const playlist = (await this.moodAnalysisService.generatePlaylist(
         emotions
-      );
+      )) as PlaylistResponse;
 
+      logger.info("Playlist generation complete");
+
+      // Create mood entry
       const moodRepo = getRepository(MoodEntry);
-
       const moodEntry = moodRepo.create({
         inputText: text,
         emotions: emotions,
         generatedPlaylist: {
-          spotifyPlaylistUrl: playlist.tracks[0].external_urls.spotify,
-          trackIds: playlist.tracks.map((track: any) => track.id),
-          mood: playlist.mood,
+          spotifyPlaylistUrl: playlist.tracks[0]?.external_urls?.spotify || "",
+          trackIds: playlist.tracks.map((track) => track.id),
+          mood: playlist.emotion_analysis.primary,
+          features: playlist.music_features,
+          stats: playlist.playlist_stats,
         },
       });
 
       await moodRepo.save(moodEntry);
+      logger.info("Mood entry saved with ID:", moodEntry.id);
 
       res.json({
-        emotions,
-        playlist: playlist.tracks,
         moodEntryId: moodEntry.id,
+        emotion_analysis: playlist.emotion_analysis,
+        music_features: playlist.music_features,
+        playlist: {
+          tracks: playlist.tracks,
+          stats: playlist.playlist_stats,
+        },
       });
     } catch (error) {
       logger.error("Error in mood analysis:", error);
-      res
-        .status(500)
-        .json({ error: "Failed to analyze mood and generate playlist" });
+      res.status(500).json({
+        error: "Failed to analyze mood and generate playlist",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
     }
   };
 
@@ -69,16 +116,14 @@ export class MoodController {
 
   public testSpotify = async (req: Request, res: Response): Promise<void> => {
     try {
-      const isConnected =
-        await this.moodAnalysisService.testSpotifyConnection();
-      res.json({
-        connected: isConnected,
-        clientId: process.env.SPOTIFY_CLIENT_ID ? "Set" : "Not set",
-        clientSecret: process.env.SPOTIFY_CLIENT_SECRET ? "Set" : "Not set",
-      });
+      const testResult = await this.moodAnalysisService.testSpotifyConnection();
+      res.json(testResult);
     } catch (error) {
       logger.error("Error testing Spotify connection:", error);
-      res.status(500).json({ error: "Failed to test Spotify connection" });
+      res.status(500).json({
+        error: "Failed to test Spotify connection",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
     }
   };
 }
