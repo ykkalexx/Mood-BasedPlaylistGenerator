@@ -132,8 +132,8 @@ class PlaylistGenerator:
         }
 
     def generate_features(self, emotion_analysis: EmotionAnalysis) -> MusicFeatures:
-        primary_features = self.base_features.get[emotion_analysis.primary, self.base_features['joy']]
-        secondary_features = self.base_features.get[emotion_analysis.secondary, self.base_features['joy']]
+        primary_features = self.base_features.get(emotion_analysis.primary, self.base_features['joy'])
+        secondary_features = self.base_features.get(emotion_analysis.secondary, self.base_features['joy'])
 
         # weighted average of primary and secondary features
         weight_primary = emotion_analysis.emotions[emotion_analysis.primary]
@@ -153,7 +153,7 @@ class PlaylistGenerator:
         features['energy'] = (features['energy'] * 0.7 + emotion_analysis.arousal * 0.3)
 
         # getting genres based on emotions
-        primary_genres = self.emotion_genres(emotion_analysis.primary, [])
+        primary_genres = self.emotion_genres.get(emotion_analysis.primary, [])
         secondary_genres = self.emotion_genres.get(emotion_analysis.secondary, [])
 
         # combining and deduplicate genres

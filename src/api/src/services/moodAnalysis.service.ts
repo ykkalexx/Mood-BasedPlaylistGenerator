@@ -44,11 +44,6 @@ interface WeightedFeatures {
   acousticness: number;
 }
 
-interface AnalysisResponse {
-  emotion_analysis: EmotionAnalysis;
-  music_features: MusicFeatures;
-}
-
 export class MoodAnalysisService {
   private spotifyApi: SpotifyWebApi;
   private readonly featureWeights: WeightedFeatures = {
@@ -135,37 +130,50 @@ export class MoodAnalysisService {
     }
   }
 
-  public async generatePlaylist(emotions: any): Promise<any> {
+  public async generatePlaylist(emotions: {
+    emotion_analysis: EmotionAnalysis;
+    music_features: MusicFeatures;
+  }): Promise<any> {
     try {
       await this.initSpotifyToken();
 
-      // getting emotion analysis and music features from the python service
-      const response = await axios.post<AnalysisResponse>(
-        `${ML_SERVICE_URL}/analyze`
-      );
-      const { emotion_analysis, music_features } = response.data;
-      logger.info("Received analysis:", { emotion_analysis, music_features });
-
-      // getting  recommendations based on features
-      const recommendations = await this.spotifyApi.getRecommendations({
-        target_valence: music_features.valence,
-        target_energy: music_features.energy,
-        target_danceability: music_features.danceability,
-        target_instrumentalness: music_features.instrumentalness,
-        target_acousticness: music_features.acousticness,
-        min_popularity: music_features.popularity_target - 10,
-        max_popularity: music_features.popularity_target + 10,
-        seed_genres: music_features.recommended_genres.slice(0, 3),
-        limit: 20,
+      const { emotion_analysis, music_features } = emotions;
+      logger.info("Using existing analysis:", {
+        emotion_analysis,
+        music_features,
       });
 
-      // getting  audio features for recommended tracks
+      // simplifying  the seed genres to known valid Spotify genres
+      const validSpotifyGenres = ["pop", "rock", "electronic"];
+
+      // simplifying  recommendations parameters
+      const recommendationParams = {
+        target_valence: Number(music_features.valence.toFixed(2)),
+        target_energy: Number(music_features.energy.toFixed(2)),
+        target_danceability: Number(music_features.danceability.toFixed(2)),
+        min_popularity: 50,
+        seed_genres: validSpotifyGenres.slice(0, 2),
+        limit: 20,
+      };
+
+      logger.info("Getting recommendations with params:", recommendationParams);
+
+      // Get recommendations
+      const recommendations = await this.spotifyApi.getRecommendations(
+        recommendationParams
+      );
+
+      if (!recommendations.body.tracks?.length) {
+        throw new Error("No tracks returned from Spotify recommendations");
+      }
+
+      // Get audio features for recommended tracks
       const trackIds = recommendations.body.tracks.map((track) => track.id);
       const audioFeatures = await this.spotifyApi.getAudioFeaturesForTracks(
         trackIds
       );
 
-      // scoring  and sort tracks based on feature match
+      // Score and sort tracks
       const scoredTracks = recommendations.body.tracks.map((track, index) => {
         const features = audioFeatures.body.audio_features[
           index
@@ -176,7 +184,7 @@ export class MoodAnalysisService {
 
       scoredTracks.sort((a, b) => b.score - a.score);
 
-      // taking  top 10 tracks
+      // Take top 10 tracks
       const finalTracks = scoredTracks.slice(0, 10).map((item) => item.track);
 
       return {
@@ -187,11 +195,15 @@ export class MoodAnalysisService {
           average_valence: this.average(finalTracks, "valence"),
           average_energy: this.average(finalTracks, "energy"),
           average_danceability: this.average(finalTracks, "danceability"),
-          genres: music_features.recommended_genres,
+          genres: validSpotifyGenres,
         },
       };
     } catch (error) {
-      logger.error("Error generating playlist:", error);
+      logger.error("Error generating playlist:", {
+        error: error instanceof Error ? error.message : "Unknown error",
+        stack: error instanceof Error ? error.stack : undefined,
+        name: error instanceof Error ? error.name : undefined,
+      });
       throw error;
     }
   }
@@ -210,6 +222,7 @@ export class MoodAnalysisService {
   }
 
   private average(tracks: any[], feature: string): number {
+    if (!tracks.length) return 0;
     const sum = tracks.reduce((acc, track) => acc + (track[feature] || 0), 0);
     return sum / tracks.length;
   }

@@ -53,38 +53,33 @@ export class MoodController {
         return;
       }
 
-      // Get emotion analysis first
-      const emotions = await this.moodAnalysisService.analyzeMood(text);
-      logger.info("Emotion analysis complete:", emotions);
+      // First get emotion analysis
+      const analysisResponse = await this.moodAnalysisService.analyzeMood(text);
+      logger.info("Emotion analysis complete:", analysisResponse);
 
-      // Generate playlist based on emotions
-      const playlist = (await this.moodAnalysisService.generatePlaylist(
-        emotions
-      )) as PlaylistResponse;
+      // Generate playlist using the analysis
+      const playlist = await this.moodAnalysisService.generatePlaylist(
+        analysisResponse
+      );
 
-      logger.info("Playlist generation complete");
-
-      // Create mood entry
       const moodRepo = getRepository(MoodEntry);
+
       const moodEntry = moodRepo.create({
         inputText: text,
-        emotions: emotions,
+        emotions: analysisResponse.emotion_analysis,
         generatedPlaylist: {
-          spotifyPlaylistUrl: playlist.tracks[0]?.external_urls?.spotify || "",
-          trackIds: playlist.tracks.map((track) => track.id),
-          mood: playlist.emotion_analysis.primary,
-          features: playlist.music_features,
-          stats: playlist.playlist_stats,
+          spotifyPlaylistUrl: playlist.tracks[0].external_urls.spotify,
+          trackIds: playlist.tracks.map((track: any) => track.id),
+          mood: analysisResponse.emotion_analysis.primary,
         },
       });
 
       await moodRepo.save(moodEntry);
-      logger.info("Mood entry saved with ID:", moodEntry.id);
 
       res.json({
         moodEntryId: moodEntry.id,
-        emotion_analysis: playlist.emotion_analysis,
-        music_features: playlist.music_features,
+        emotion_analysis: analysisResponse.emotion_analysis,
+        music_features: analysisResponse.music_features,
         playlist: {
           tracks: playlist.tracks,
           stats: playlist.playlist_stats,
@@ -92,10 +87,9 @@ export class MoodController {
       });
     } catch (error) {
       logger.error("Error in mood analysis:", error);
-      res.status(500).json({
-        error: "Failed to analyze mood and generate playlist",
-        details: error instanceof Error ? error.message : "Unknown error",
-      });
+      res
+        .status(500)
+        .json({ error: "Failed to analyze mood and generate playlist" });
     }
   };
 
