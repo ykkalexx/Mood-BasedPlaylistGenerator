@@ -132,79 +132,56 @@ class PlaylistGenerator:
         }
 
     def generate_features(self, emotion_analysis: EmotionAnalysis) -> MusicFeatures:
-        pass
+        primary_features = self.base_features.get[emotion_analysis.primary, self.base_features['joy']]
+        secondary_features = self.base_features.get[emotion_analysis.secondary, self.base_features['joy']]
 
+        # weighted average of primary and secondary features
+        weight_primary = emotion_analysis.emotions[emotion_analysis.primary]
+        weight_secondary = emotion_analysis.emotions[emotion_analysis.secondary]
+        total_weight = weight_primary + weight_secondary
+
+        # normalizing weights
+        weight_primary /= total_weight
+        weight_secondary /= total_weight
+
+        # combining features
+        features = {}
+        for key in primary_features:
+            features[key] = (primary_features[key] * weight_primary + secondary_features[key] * weight_secondary)
+
+        features['valence'] = (features['valence'] * 0.7 + emotion_analysis.valence * 0.3)
+        features['energy'] = (features['energy'] * 0.7 + emotion_analysis.arousal * 0.3)
+
+        # getting genres based on emotions
+        primary_genres = self.emotion_genres(emotion_analysis.primary, [])
+        secondary_genres = self.emotion_genres.get(emotion_analysis.secondary, [])
+
+        # combining and deduplicate genres
+        genres = list(set(primary_genres[:2] + secondary_genres[:1]))
+
+        return MusicFeatures(
+            valence=features['valence'],
+            energy=features['energy'],
+            danceability=features['danceability'],
+            tempo_preference=features['tempo_preference'],
+            instrumentalness=features['instrumentalness'],
+            acousticness=features['acousticness'],
+            popularity_target=features['popularity_target'],
+            genres=genres
+        )
+
+# Initialize analyzers
+emotion_analyzer = EmotionAnalyzer()
 playlist_generator = PlaylistGenerator()
 
 @app.route('/analyze', methods=['POST'])
 def analyze_emotion():
     try:
-        logger.info("Received analyze request")
-        data = request.get_json()
-        logger.debug(f"Request data: {data}")
-
-        if not data or 'text' not in data:
-            logger.error("No text provided in request")
-            return jsonify({'error': 'No text provided'}), 400
-
-        text = data['text']
-        logger.info(f"Analyzing text: {text}")
-
-        if classifier is None:
-            logger.error("Classifier not initialized")
-            return jsonify({'error': 'Classifier not initialized'}), 500
-        
-        # Get emotion scores
-        emotions = classifier(text)[0]
-        emotions_sorted = sorted(emotions, key=lambda x: x['score'], reverse=True)
-        
-        # Get primary and secondary emotions
-        primary_emotion = emotions_sorted[0]
-        secondary_emotion = emotions_sorted[1]
-        
-        result = {
-            "primary": primary_emotion['label'],
-            "secondary": secondary_emotion['label'],
-            "intensity": float(primary_emotion['score'])
-        }
-
-        logger.info(f"Analysis result: {result}")
-        return jsonify(result)
+        pass
 
     except Exception as e:
-        logger.error(f"Error in analyze_emotion: {str(e)}")
-        logger.error(traceback.format_exc())
+        logger.error(f"Error in analyze_emotion: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
-
-@app.route('/generate-playlist', methods=['POST'])
-def generate_playlist():
-    try:
-        logger.info("Received generate-playlist request")
-        emotion_data = request.get_json()
-        logger.debug(f"Emotion data received: {emotion_data}")
-
-        if not emotion_data:
-            logger.error("No emotion data provided")
-            return jsonify({'error': 'No emotion data provided'}), 400
-
-        # Generate music features
-        features = playlist_generator.generate_features(emotion_data)
-        
-        response_data = {
-            'features': features,
-            'emotion': emotion_data
-        }
-        
-        logger.info(f"Sending response: {response_data}")
-        return jsonify(response_data)
-
-    except Exception as e:
-        logger.error(f"Error in generate_playlist: {str(e)}")
-        logger.error(traceback.format_exc())
-        return jsonify({
-            'error': str(e),
-            'details': traceback.format_exc()
-        }), 500
 
 @app.route('/health', methods=['GET'])
 def health_check():
