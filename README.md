@@ -71,3 +71,7 @@ ML_SERVICE_URL=http://localhost:5000
 7. Results are stored in database
 
 For more documentation go to the docs folder
+
+## 🎥 Demo
+
+An video showcase of this project can be found in the docs folder
